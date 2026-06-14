@@ -1,0 +1,70 @@
+name: Update formula
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Get latest stable git version
+        id: latest
+        run: |
+          LATEST=$(git ls-remote --tags https://github.com/git/git \
+            | grep -oE 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sed 's|refs/tags/v||' \
+            | sort -V \
+            | tail -1)
+          echo "version=$LATEST" >> "$GITHUB_OUTPUT"
+
+      - name: Get current version from formula
+        id: current
+        run: |
+          CURRENT=$(grep -oE 'git-[0-9]+\.[0-9]+\.[0-9]+\.tar' Formula/safer-git.rb \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Download tarball and compute sha256
+        if: steps.latest.outputs.version != steps.current.outputs.version
+        id: tarball
+        run: |
+          VERSION="${{ steps.latest.outputs.version }}"
+          URL="https://mirrors.edge.kernel.org/pub/software/scm/git/git-${VERSION}.tar.xz"
+          HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" -I "$URL")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Tarball not yet available at kernel.org (HTTP $HTTP_STATUS), skipping."
+            exit 0
+          fi
+          SHA256=$(curl -sL "$URL" | sha256sum | cut -d' ' -f1)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update formula
+        if: steps.tarball.outputs.available == 'true'
+        run: |
+          sed -i 's|url "https://mirrors.edge.kernel.org/pub/software/scm/git/git-.*"|url "${{ steps.tarball.outputs.url }}"|' Formula/safer-git.rb
+          sed -i 's|sha256 "[a-f0-9]*"|sha256 "${{ steps.tarball.outputs.sha256 }}"|' Formula/safer-git.rb
+
+      - name: Create pull request
+        if: steps.tarball.outputs.available == 'true'
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "bump safer-git to git ${{ steps.latest.outputs.version }}"
+          title: "Update to git ${{ steps.latest.outputs.version }}"
+          body: |
+            Updates git from `${{ steps.current.outputs.version }}` to `${{ steps.latest.outputs.version }}`.
+
+            **Before merging, verify:**
+            - [ ] The patch in `safer-git.rb` still applies cleanly: `brew reinstall local/safer-git/safer-git`
+            - [ ] Tests pass: `brew test local/safer-git/safer-git`
+          branch: "update/git-${{ steps.latest.outputs.version }}"
+          delete-branch: true

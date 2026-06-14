@@ -9,24 +9,9 @@ class SaferGit < Formula
   depends_on "curl"
   depends_on "pcre2"
 
-  patch :p1 do
-    <<~'PATCH'
-      --- a/hook.c
-      +++ b/hook.c
-      @@ -562,6 +562,10 @@ int run_hooks_opt(struct repository *r, const char *hook_name,
-       	if (options->invoked_hook)
-       		*options->invoked_hook = 0;
-
-      +	/* safer-git: all hooks permanently disabled at build time */
-      +	run_hooks_opt_clear(options);
-      +	return 0;
-      +
-       	cb_data.hook_command_list = list_hooks(r, hook_name, options);
-       	if (!cb_data.hook_command_list->nr) {
-    PATCH
-  end
-
   def install
+    system "patch", "-p1", "-i", "#{__dir__}/../patches/disable-hooks.patch"
+
     ENV["USE_LIBPCRE2"] = "YesPlease"
     ENV["NO_PERL"] = "1"
     ENV["NO_PYTHON"] = "1"
