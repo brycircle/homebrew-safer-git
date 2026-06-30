@@ -1,0 +1,25 @@
+# ast-grep rule that neutralizes git's hook runner.
+#
+# It matches run_hooks_opt() by name and replaces its ENTIRE body with a stub
+# that resets *invoked_hook, clears the options, and returns 0 without ever
+# calling list_hooks()/run_processes_parallel(). Matching the whole body (rather
+# than inserting a line at a fixed offset) keeps this resilient to upstream
+# refactors of the function internals across git releases.
+#
+# Used by .github/workflows/update-formula.yml to regenerate
+# patches/disable-hooks.patch on every version bump. If git ever renames the
+# function or changes its signature shape, this matches nothing and the workflow
+# fails loudly (and verify.sh would catch a silent no-op at runtime).
+id: disable-git-hooks
+language: c
+rule:
+  pattern: $RET run_hooks_opt($$$PARAMS) { $$$BODY }
+fix: |-
+  $RET run_hooks_opt($$$PARAMS)
+  {
+  	/* safer-git: all hooks permanently disabled at build time */
+  	if (options && options->invoked_hook)
+  		*options->invoked_hook = 0;
+  	run_hooks_opt_clear(options);
+  	return 0;
+  }
