@@ -56,6 +56,32 @@ jobs:
           sed -i "s|url \"https://mirrors.edge.kernel.org/pub/software/scm/git/git-.*\"|url \"$NEW_URL\"|" Formula/safer-git.rb
           sed -i "s|sha256 \"[a-f0-9]*\"|sha256 \"$NEW_SHA256\"|" Formula/safer-git.rb
 
+      - name: Regenerate hook patch (structural, via ast-grep)
+        if: steps.tarball.outputs.available == 'true'
+        env:
+          NEW_URL: ${{ steps.tarball.outputs.url }}
+        run: |
+          npm install -g @ast-grep/cli
+
+          # Extract just hook.c from the new tarball.
+          curl -fsSL "$NEW_URL" | tar -xJ --strip-components=1 -C "$RUNNER_TEMP" --wildcards '*/hook.c'
+          cp "$RUNNER_TEMP/hook.c" "$RUNNER_TEMP/hook.c.orig"
+
+          # Rewrite run_hooks_opt() structurally; the body is matched by AST, not
+          # by line number, so it survives upstream refactors of the function.
+          ast-grep scan -r patches/disable-hooks.yml -U "$RUNNER_TEMP/hook.c"
+
+          # Guard: a no-op rewrite means the rule matched nothing (e.g. the
+          # function was renamed). Fail loudly instead of shipping a patch that
+          # silently disables nothing.
+          if diff -q "$RUNNER_TEMP/hook.c.orig" "$RUNNER_TEMP/hook.c" >/dev/null; then
+            echo "::error::ast-grep matched no run_hooks_opt in git $NEW_URL — patches/disable-hooks.yml needs review"
+            exit 1
+          fi
+
+          diff -u --label a/hook.c --label b/hook.c \
+            "$RUNNER_TEMP/hook.c.orig" "$RUNNER_TEMP/hook.c" > patches/disable-hooks.patch || true
+
       - name: Create pull request
         if: steps.tarball.outputs.available == 'true'
         uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6
@@ -66,8 +92,13 @@ jobs:
           body: |
             Updates git from `${{ steps.current.outputs.version }}` to `${{ steps.latest.outputs.version }}`.
 
+            `patches/disable-hooks.patch` was regenerated structurally with ast-grep
+            against this release's `hook.c` — review the diff to confirm the stubbed
+            `run_hooks_opt()` looks right.
+
             **Before merging, verify:**
-            - [ ] The patch in `safer-git.rb` still applies cleanly: `brew reinstall local/safer-git/safer-git`
+            - [ ] The regenerated patch in `patches/disable-hooks.patch` looks correct
+            - [ ] The patch applies cleanly: `brew reinstall local/safer-git/safer-git`
             - [ ] Tests pass: `brew test local/safer-git/safer-git`
           branch: "update/git-${{ steps.latest.outputs.version }}"
           delete-branch: true
