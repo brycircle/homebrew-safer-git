@@ -49,9 +49,12 @@ jobs:
 
       - name: Update formula
         if: steps.tarball.outputs.available == 'true'
+        env:
+          NEW_URL: ${{ steps.tarball.outputs.url }}
+          NEW_SHA256: ${{ steps.tarball.outputs.sha256 }}
         run: |
-          sed -i 's|url "https://mirrors.edge.kernel.org/pub/software/scm/git/git-.*"|url "${{ steps.tarball.outputs.url }}"|' Formula/safer-git.rb
-          sed -i 's|sha256 "[a-f0-9]*"|sha256 "${{ steps.tarball.outputs.sha256 }}"|' Formula/safer-git.rb
+          sed -i "s|url \"https://mirrors.edge.kernel.org/pub/software/scm/git/git-.*\"|url \"$NEW_URL\"|" Formula/safer-git.rb
+          sed -i "s|sha256 \"[a-f0-9]*\"|sha256 \"$NEW_SHA256\"|" Formula/safer-git.rb
 
       - name: Create pull request
         if: steps.tarball.outputs.available == 'true'
