@@ -1,8 +1,8 @@
 class SaferGit < Formula
   desc "Git with hooks permanently disabled at compile time"
   homepage "https://git-scm.com"
-  url "https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.55.0.tar.xz"
-  sha256 "457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17505357"
+  url "https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.56.1.tar.xz"
+  sha256 "f0b0bf89264b9bd2e1c640363e7529643989da76281600473c50745cd34a607f"
 
   depends_on "gettext"
   depends_on "openssl@3"
